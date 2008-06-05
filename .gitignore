@@ -1,0 +1,12 @@
+config.err
+config.h
+config.mak
+doc/*
+ffmpeg
+ffmpeg_g
+ffplay
+ffplay_g
+ffserver
+ffserver_g
+version.h
+libscale/*
