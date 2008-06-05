@@ -744,7 +744,9 @@ static void compute_pkt_fields(AVFormatContext *s, AVStream *st,
                 int64_t old_diff= FFABS(st->cur_dts - pkt->duration - pkt->pts);
                 int64_t new_diff= FFABS(st->cur_dts - pkt->pts);
                 if(old_diff < new_diff && old_diff < (pkt->duration>>3)){
-                    pkt->pts += pkt->duration;
+                    printf("WARNING: Wanted to mess with PTS for packet, we didn't allow it.\n");
+                    //printf("OldDiff=%ju, NewDiff=%ju, dura: %d, Incrementing PTS by %d\n", old_diff, new_diff, pkt->duration>>3, pkt->duration);
+                    //pkt->pts += pkt->duration;
     //                av_log(NULL, AV_LOG_DEBUG, "id:%d old:%"PRId64" new:%"PRId64" dur:%d cur:%"PRId64" size:%d\n", pkt->stream_index, old_diff, new_diff, pkt->duration, st->cur_dts, pkt->size);
                 }
             }
@@ -1024,7 +1026,11 @@ int av_find_default_stream_index(AVFormatContext *s)
 /**
  * Flush the frame reader.
  */
+#ifdef _XBOX
+void av_read_frame_flush(AVFormatContext *s)
+#else
 static void av_read_frame_flush(AVFormatContext *s)
+#endif
 {
     AVStream *st;
     int i;
@@ -1662,6 +1668,37 @@ static void av_estimate_timings_from_pts(AVFormatContext *ic, offset_t old_offse
     }
 }
 
+static void av_estimate_timings_from_pts2(AVFormatContext *ic, offset_t old_offset)
+{
+    AVStream *st;
+    int i, step= 1024;
+    int64_t ts, pos;
+
+    for(i=0;i<ic->nb_streams;i++) {
+        st = ic->streams[i];
+
+        pos = 0;
+        ts = ic->iformat->read_timestamp(ic, i, &pos, DURATION_MAX_READ_SIZE);
+        if (ts == AV_NOPTS_VALUE)
+            continue;
+        st->start_time = ts;
+
+        pos = url_fsize(ic->pb) - 1;
+        do {
+            pos -= step;
+            ts = ic->iformat->read_timestamp(ic, i, &pos, pos + step);
+            step += step;
+        } while (ts == AV_NOPTS_VALUE && pos >= step && step < DURATION_MAX_READ_SIZE);
+
+        if (ts != AV_NOPTS_VALUE)
+            st->duration = ts - st->start_time;
+    }
+
+    fill_all_stream_timings(ic);
+
+    url_fseek(ic->pb, old_offset, SEEK_SET);
+}
+
 static void av_estimate_timings(AVFormatContext *ic, offset_t old_offset)
 {
     int64_t file_size;
@@ -1681,6 +1718,10 @@ static void av_estimate_timings(AVFormatContext *ic, offset_t old_offset)
         file_size && !url_is_streamed(ic->pb)) {
         /* get accurate estimate from the PTSes */
         av_estimate_timings_from_pts(ic, old_offset);
+    } else if (ic->iformat->read_timestamp && 
+        file_size && !url_is_streamed(ic->pb)) {
+        /* get accurate estimate from the PTSes */
+        av_estimate_timings_from_pts2(ic, old_offset);
     } else if (av_has_duration(ic)) {
         /* at least one component has timings - we use them for all
            the components */
@@ -1832,7 +1873,9 @@ static void compute_chapters_end(AVFormatContext *s)
 
     for (i=0; i+1<s->nb_chapters; i++)
         if (s->chapters[i]->end == AV_NOPTS_VALUE) {
-            assert(s->chapters[i]->start <= s->chapters[i+1]->start);
+            if (s->chapters[i]->start > s->chapters[i+1]->start)
+                printf("Warning, this chapter's start [%ju] is greater than next chapter's start [%ju].\n", s->chapters[i]->start, s->chapters[i+1]->start);
+            //assert(s->chapters[i]->start <= s->chapters[i+1]->start);
             assert(!av_cmp_q(s->chapters[i]->time_base, s->chapters[i+1]->time_base));
             s->chapters[i]->end = s->chapters[i+1]->start;
         }
