@@ -193,7 +193,6 @@ static void fill_palette(DVDSubContext* ctx,
 }
 
 #define READ_OFFSET(a) (big_offsets ? AV_RB32(a) : AV_RB16(a))
-
 static int decode_dvd_subtitles(DVDSubContext *ctx, AVSubtitle *sub_header,
                                 const uint8_t *buf, int buf_size)
 {
@@ -520,10 +519,10 @@ static int dvdsub_decode(AVCodecContext *avctx,
     if (!is_menu && find_smallest_bounding_rectangle(sub) == 0)
         goto no_subtitle;
 
-#if defined(DEBUG)
     av_log(NULL, AV_LOG_INFO, "start=%d ms end =%d ms\n",
            sub->start_display_time,
            sub->end_display_time);
+#if 0
     ppm_save("/tmp/a.ppm", sub->rects[0].bitmap,
              sub->rects[0].w, sub->rects[0].h, sub->rects[0].rgba_palette);
 #endif
