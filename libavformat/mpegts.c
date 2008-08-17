@@ -603,6 +603,25 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
                 language[2] = get8(&p, desc_end);
                 language[3] = 0;
                 break;
+            case REGISTRATION_DESCRIPTOR: /*MPEG-2 Registration descriptor */
+            {
+                uint8_t bytes[4];
+                bytes[0] = get8(&p, desc_end);
+                bytes[1] = get8(&p, desc_end);
+                bytes[2] = get8(&p, desc_end);
+                bytes[3] = get8(&p, desc_end);
+                
+                if (stream_type == STREAM_TYPE_PRIVATE_DATA) {
+                    if(bytes[0] == 'A' && bytes[1] == 'C' &&
+                        bytes[2] == '-' && bytes[3] == '3')
+                        stream_type = STREAM_TYPE_AUDIO_AC3;
+                
+                if(bytes[0] == 'D' && bytes[1] == 'T' && bytes[2] == 'S' && 
+                    (bytes[3] == '1' || bytes[3] == '2' || bytes[3] == '3'))
+                    stream_type = STREAM_TYPE_AUDIO_DTS;
+                }
+                break;
+            }
             default:
                 break;
             }
@@ -617,6 +636,13 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
 
         /* now create ffmpeg stream */
         switch(stream_type) {
+        case STREAM_TYPE_AUDIO_HDMV_DTS:
+        case STREAM_TYPE_AUDIO_HDMV_DTS_HD:
+        case STREAM_TYPE_AUDIO_HDMV_DTS_HD_MASTER:
+        case STREAM_TYPE_AUDIO_HDMV_AC3_TRUE_HD:
+        case STREAM_TYPE_AUDIO_HDMV_AC3_PLUS:
+            if(!has_hdmv_descr)
+                break;
         case STREAM_TYPE_AUDIO_MPEG1:
         case STREAM_TYPE_AUDIO_MPEG2:
         case STREAM_TYPE_VIDEO_MPEG1:
@@ -627,10 +653,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         case STREAM_TYPE_AUDIO_AAC:
         case STREAM_TYPE_AUDIO_AC3:
         case STREAM_TYPE_AUDIO_DTS:
-        case STREAM_TYPE_AUDIO_HDMV_DTS:
         case STREAM_TYPE_SUBTITLE_DVB:
-            if(stream_type == STREAM_TYPE_AUDIO_HDMV_DTS && !has_hdmv_descr)
-                break;
             if(ts->pids[pid] && ts->pids[pid]->type == MPEGTS_PES){
                 pes= ts->pids[pid]->u.pes_filter.opaque;
                 st= pes->st;
@@ -968,11 +991,15 @@ static AVStream* new_pes_av_stream(PESContext *pes, uint32_t code)
         codec_id = CODEC_ID_AAC;
         break;
     case STREAM_TYPE_AUDIO_AC3:
+    case STREAM_TYPE_AUDIO_HDMV_AC3_TRUE_HD:
+    case STREAM_TYPE_AUDIO_HDMV_AC3_PLUS:
         codec_type = CODEC_TYPE_AUDIO;
         codec_id = CODEC_ID_AC3;
         break;
     case STREAM_TYPE_AUDIO_DTS:
     case STREAM_TYPE_AUDIO_HDMV_DTS:
+    case STREAM_TYPE_AUDIO_HDMV_DTS_HD:
+    case STREAM_TYPE_AUDIO_HDMV_DTS_HD_MASTER:
         codec_type = CODEC_TYPE_AUDIO;
         codec_id = CODEC_ID_DTS;
         break;
@@ -1410,7 +1437,8 @@ static int64_t mpegts_get_pcr(AVFormatContext *s, int stream_index,
     pos = ((*ppos  + ts->raw_packet_size - 1 - ts->pos47) / ts->raw_packet_size) * ts->raw_packet_size + ts->pos47;
     if (find_next) {
         for(;;) {
-            url_fseek(s->pb, pos, SEEK_SET);
+            if (url_fseek(s->pb, pos, SEEK_SET) < 0)
+                return AV_NOPTS_VALUE;
             if (get_buffer(s->pb, buf, TS_PACKET_SIZE) != TS_PACKET_SIZE)
                 return AV_NOPTS_VALUE;
             if ((pcr_pid < 0 || (AV_RB16(buf + 1) & 0x1fff) == pcr_pid) &&
@@ -1424,7 +1452,8 @@ static int64_t mpegts_get_pcr(AVFormatContext *s, int stream_index,
             pos -= ts->raw_packet_size;
             if (pos < 0)
                 return AV_NOPTS_VALUE;
-            url_fseek(s->pb, pos, SEEK_SET);
+            if (url_fseek(s->pb, pos, SEEK_SET) < 0)
+                return AV_NOPTS_VALUE;
             if (get_buffer(s->pb, buf, TS_PACKET_SIZE) != TS_PACKET_SIZE)
                 return AV_NOPTS_VALUE;
             if ((pcr_pid < 0 || (AV_RB16(buf + 1) & 0x1fff) == pcr_pid) &&
