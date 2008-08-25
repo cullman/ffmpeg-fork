@@ -232,10 +232,6 @@ int ff_combine_frame(ParseContext *pc, int next, const uint8_t **buf, int *buf_s
     }
 #endif
 
-    /* Don't allow bogus input */
-    if (next < 0)
-        return -1;
-
     /* Copy overread bytes from last frame into buffer. */
     for(; pc->overread>0; pc->overread--){
         pc->buffer[pc->index++]= pc->buffer[pc->overread_index++];
@@ -276,9 +272,12 @@ int ff_combine_frame(ParseContext *pc, int next, const uint8_t **buf, int *buf_s
     }
 
     /* store overread bytes */
-    for(;next < 0; next++){
-        pc->state = (pc->state<<8) | pc->buffer[pc->last_index + next];
-        pc->overread++;
+    if (pc->last_index + next >= 0)
+    {
+        for(;next < 0; next++){
+            pc->state = (pc->state<<8) | pc->buffer[pc->last_index + next];
+            pc->overread++;
+        }
     }
 
 #if 0
